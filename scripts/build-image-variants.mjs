@@ -31,15 +31,14 @@ const TARGET = path.join(SOURCE, "lq");
 const MANIFEST = path.join(REPO_ROOT, "shared/lowResImages.js");
 
 /** Longest side of a twin, px: enough to read as a preview. */
-// Previews are short-lived but they are seen: cards render at 372px, which is 744
-// physical pixels on a retina screen. A 240px preview visibly smears there, so 480 it
-// is — and that costs almost nothing, because the saving comes from the format rather
-// than the size.
-const OPAQUE_SIDE = 480;
-// A transparent PNG barely compresses: at 480px it comes out heavier than the
-// original. Those images also render smaller (144–191px), so they get their own size.
-const ALPHA_SIDE = 340;
-const JPEG_QUALITY = 50;
+// Cards render at 372px, which is 744 physical pixels on a retina screen — so that is
+// the size, and the quality goes down instead. On interface screenshots extra pixels
+// beat extra quality: 744px at q40 weighs less than 640px at q55.
+const OPAQUE_SIDE = 744;
+// A transparent PNG barely compresses, so it gets its own size. The loader does not
+// wait for these, so they can afford retina headroom: they render at 144–191px.
+const ALPHA_SIDE = 420;
+const JPEG_QUALITY = 40;
 /**
  * Keep a twin only if it is lighter than the original. JPEG saves enormously, so the
  * bar stays high; a transparent PNG gains less, but even that takes hundreds of
