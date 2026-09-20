@@ -40,9 +40,11 @@ DOM directly, so they are unit-tested in `tests/test_boot_dots_*.mjs`.
 1. **Quiet until it matters.** Nothing is shown for the first 600ms; if the page
    is ready by then, the animation is skipped entirely — the same rule the
    existing CSS already encoded through `is-boot-slow`.
-2. **Warm cache skips it.** On a repeat visit the warm-up list settles within a
-   few hundred milliseconds, readiness is reported immediately and the animation
-   never shows — the page simply appears.
+2. **Warm cache skips it.** A repeat visit is recognised before the first frame:
+   a cached navigation and cached sub-resources report `transferSize: 0`. The
+   threshold is then raised rather than disabled — nothing to wait for means no
+   animation, but a genuinely slow load still gets the rings instead of a blank
+   page.
 3. **Rings.** Dots fade towards the edges and glow up as progress grows; a
    lightness wave travels outwards. The percent badge sits in the middle and the
    rings start outside it.

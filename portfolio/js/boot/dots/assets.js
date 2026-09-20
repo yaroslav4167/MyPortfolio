@@ -12,6 +12,28 @@
  * window — that is what lets a repeat visit skip the animation entirely.
  */
 
+/**
+ * Whether this visit is served from cache.
+ *
+ * A cached navigation and cached sub-resources both report `transferSize: 0`,
+ * and that is known before a single frame is drawn — early enough to decide
+ * against showing the animation at all.
+ *
+ * @returns {boolean}
+ */
+export function isCachedVisit() {
+  if (typeof performance?.getEntriesByType !== "function") return false;
+
+  const nav = performance.getEntriesByType("navigation")[0];
+  if (nav && nav.transferSize === 0) return true;
+
+  // The document itself may be uncacheable while everything around it is not.
+  const assets = performance
+    .getEntriesByType("resource")
+    .filter((e) => /\.(js|css)(\?|$)/.test(e.name));
+  return assets.length >= 2 && assets.every((e) => e.transferSize === 0);
+}
+
 /** Assets the page requests only once it creates the matching elements. */
 export const PRELOAD_PATHS = Object.freeze([
   "icons/arrow-left.svg",

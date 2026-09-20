@@ -20,7 +20,7 @@
  */
 import { createDotsScene } from "./boot/dots/scene.js";
 import { readSiteGrid } from "./boot/dots/siteGrid.js";
-import { trackAssets, PRELOAD_PATHS, assetBase } from "./boot/dots/assets.js";
+import { trackAssets, isCachedVisit, PRELOAD_PATHS, assetBase } from "./boot/dots/assets.js";
 import { INFINITE_BG } from "./infiniteBg.js";
 
 const BADGE_SIZE = 100;
@@ -377,6 +377,8 @@ export async function runDotsBoot(_viewportEl, loaderEl, { dark = false } = {}) 
 
   const root = loaderEl || document.getElementById("boot-loader");
 
+  const cached = isCachedVisit();
+
   const loader = mountDotsBootLoader({
     root,
     dark,
@@ -384,12 +386,20 @@ export async function runDotsBoot(_viewportEl, loaderEl, { dark = false } = {}) 
     handOffTo: ".scene-infinite-bg",
     fallbackGridTo: ".viewport",
     fallbackClearBg: "#mobile-sheet",
+    // A repeat visit has nothing to wait for, so the animation should not show
+    // at all. The threshold is raised rather than disabled: if this particular
+    // load turns out slow anyway, the rings still appear instead of a blank
+    // page.
+    slowAfter: cached ? 2600 : 600,
   });
   if (!loader) return;
 
   const base = assetBase();
   const stop = trackAssets((p) => loader.setProgress(p), {
     preload: PRELOAD_PATHS.map((path) => base + path),
+    // Nothing is being fetched on a cached visit, so readiness should not wait
+    // out the silence window — the fast path may fire as soon as warm-up ends.
+    fastPathMs: cached ? 2500 : 600,
   });
 
   await new Promise((resolve) => {

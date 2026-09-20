@@ -214,3 +214,45 @@ describe("dots boot: theme", () => {
     }
   });
 });
+
+describe("dots boot: repeat visits", () => {
+  it("recognises a cached visit from resource timing", async () => {
+    const saved = globalThis.performance;
+    try {
+      const { isCachedVisit } = await load("portfolio/js/boot/dots/assets.js");
+
+      globalThis.performance = {
+        getEntriesByType: (type) =>
+          type === "navigation" ? [{ transferSize: 0 }] : [],
+      };
+      assert.equal(isCachedVisit(), true, "cached navigation is enough");
+
+      globalThis.performance = {
+        getEntriesByType: (type) =>
+          type === "navigation"
+            ? [{ transferSize: 3623 }]
+            : [
+              { name: "/a/app.js", transferSize: 0 },
+              { name: "/a/app.css", transferSize: 0 },
+            ],
+      };
+      assert.equal(isCachedVisit(), true, "an uncacheable document but cached assets");
+
+      globalThis.performance = {
+        getEntriesByType: (type) =>
+          type === "navigation"
+            ? [{ transferSize: 3623 }]
+            : [
+              { name: "/a/app.js", transferSize: 4096 },
+              { name: "/a/app.css", transferSize: 0 },
+            ],
+      };
+      assert.equal(isCachedVisit(), false, "something came over the wire");
+
+      globalThis.performance = {};
+      assert.equal(isCachedVisit(), false, "no timing API, no guessing");
+    } finally {
+      globalThis.performance = saved;
+    }
+  });
+});
