@@ -30,45 +30,31 @@ describe("low-res twins", () => {
 
   it("keeps only what is genuinely lighter", async () => {
     const { LOW_RES_IMAGES } = await load("shared/lowResImages.js");
-    const { usesTransparency } = await load("scripts/detect-alpha.mjs");
 
-    for (const [original, twin] of Object.entries(LOW_RES_IMAGES)) {
+    for (const [original, preview] of Object.entries(LOW_RES_IMAGES)) {
       const from = path.join(REPO_ROOT, "ds-showcase/assets", original);
-      const to = path.join(REPO_ROOT, "ds-showcase/assets", twin);
+      const to = path.join(REPO_ROOT, "ds-showcase/assets", preview);
       const saving = 1 - statSync(to).size / statSync(from).size;
-      // Transparent images stay PNG and gain less; opaque ones become JPEG and gain a lot.
-      const floor = usesTransparency(from) ? 0.12 : 0.25;
-      assert.ok(saving >= floor, `${twin}: saved ${Math.round(saving * 100)}%`);
+      assert.ok(saving >= 0.25, `${preview}: saved ${Math.round(saving * 100)}%`);
     }
   });
 
-  it("converts only images that do not actually use transparency", async () => {
+  it("builds every preview as WebP, which keeps transparency", async () => {
     const { LOW_RES_IMAGES } = await load("shared/lowResImages.js");
     const { usesTransparency } = await load("scripts/detect-alpha.mjs");
 
-    for (const [original, twin] of Object.entries(LOW_RES_IMAGES)) {
-      const from = path.join(REPO_ROOT, "ds-showcase/assets", original);
-      if (twin.endsWith(".jpg")) {
-        assert.equal(usesTransparency(from), false, `${original} has nothing to lose`);
-      } else {
-        assert.equal(usesTransparency(from), true, `${original} needs its alpha`);
-      }
+    const transparent = Object.keys(LOW_RES_IMAGES).filter((original) =>
+      original.endsWith(".png") &&
+      usesTransparency(path.join(REPO_ROOT, "ds-showcase/assets", original)));
+
+    assert.ok(transparent.length > 0, "there are images that rely on transparency");
+    for (const preview of Object.values(LOW_RES_IMAGES)) {
+      // WebP carries an alpha channel, so a single format covers both cases —
+      // unlike JPEG, which would fill rounded corners white.
+      assert.ok(preview.endsWith(".webp"), `${preview} is WebP`);
     }
   });
 
-  it("keeps transparency as PNG and drops the rest to JPEG", async () => {
-    const { LOW_RES_IMAGES } = await load("shared/lowResImages.js");
-    for (const [original, twin] of Object.entries(LOW_RES_IMAGES)) {
-      const ext = path.extname(twin);
-      assert.ok(
-        ext === ".jpg" || ext === path.extname(original),
-        `${twin} is either a JPEG or keeps the original format`
-      );
-    }
-  });
-});
-
-describe("progressive resolver", () => {
   it("hands out a twin and remembers the original", async () => {
     const { withProgressiveAssets, twinUrlFor } = await load("portfolio/js/progressiveImages.js");
     const { LOW_RES_IMAGES } = await load("shared/lowResImages.js");

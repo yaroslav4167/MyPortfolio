@@ -1,25 +1,19 @@
 /**
- * Builds low-resolution twins for the showcase images.
+ * Builds low-resolution previews for the showcase images.
  *
- * The boot loader warms these instead of the full-size files, so it can let the
+ * The boot loader waits for these instead of the full-size files, so it can let the
  * page through sooner; the originals are swapped in afterwards (see
- * `portfolio/js/boot/dots/upgradeImages.js`).
+ * `portfolio/js/progressiveImages.js`).
  *
- * Images without an alpha channel become JPEG, which is where the real saving
- * is; the rest stay PNG and are simply scaled further, since JPEG would drop
- * their transparency.
+ * Everything is WebP: it keeps transparency, resizes in one pass, and at preview
+ * quality weighs a fraction of the equivalent JPEG. Cards render at 372px, which is
+ * 744 physical pixels on a retina screen — that is the size previews are built at, so
+ * they do not smear before the swap.
  *
- * A twin is only kept when it is meaningfully lighter. Re-encoding a small PNG
- * can easily produce a bigger file than the original — `sips` does not optimise
- * PNG the way the source images already were — and warming such a "preview"
- * would cost more than it saves.
- *
- * Usage: node scripts/build-image-variants.mjs
- * Requires macOS `sips`. The output is committed, so this only runs when the
- * source images change.
+ * Usage: node scripts/build-image-variants.mjs  (requires `cwebp`)
+ * The output is committed, so this only runs when the source images change.
  */
 import { execFileSync } from "node:child_process";
-import { usesTransparency } from "./detect-alpha.mjs";
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,89 +24,67 @@ const SOURCE = path.join(REPO_ROOT, "ds-showcase/assets/images");
 const TARGET = path.join(SOURCE, "lq");
 const MANIFEST = path.join(REPO_ROOT, "shared/lowResImages.js");
 
-/** Longest side of a twin, px: enough to read as a preview. */
-// Cards render at 372px, which is 744 physical pixels on a retina screen — so that is
-// the size, and the quality goes down instead. On interface screenshots extra pixels
-// beat extra quality: 744px at q40 weighs less than 640px at q55.
-const OPAQUE_SIDE = 744;
-// A transparent PNG barely compresses, so it gets its own size. The loader does not
-// wait for these, so they can afford retina headroom: they render at 144–191px.
-const ALPHA_SIDE = 420;
-const JPEG_QUALITY = 40;
-/**
- * Keep a twin only if it is lighter than the original. JPEG saves enormously, so the
- * bar stays high; a transparent PNG gains less, but even that takes hundreds of
- * kilobytes off the loader.
- */
-const MIN_SAVING_JPEG = 0.25;
-const MIN_SAVING_PNG = 0.12;
+/** Long side of a preview, px: a retina card with headroom. */
+const PREVIEW_SIDE = 744;
+const PREVIEW_QUALITY = 40;
+/** Keep a preview only if it is meaningfully lighter than the original. */
+const MIN_SAVING = 0.25;
 
-// What matters is transparency actually being used, not the channel being present.
-const hasAlpha = (file) => usesTransparency(file);
-
-mkdirSync(TARGET, { recursive: true });
-
-const manifest = {};
-const skipped = [];
-let bytesBefore = 0;
-let bytesAfter = 0;
-
-/** Every image under the source folder, including nested ones (stickers). */
 function* imagesIn(dir, prefix = "") {
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (entry.name === "lq") continue;
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) yield* imagesIn(path.join(dir, entry.name), rel);
-    else if (/\.(png|jpg|jpeg)$/i.test(entry.name)) yield rel;
+    else if (/\.(webp|png|jpe?g)$/i.test(entry.name)) yield rel;
   }
 }
 
+mkdirSync(TARGET, { recursive: true });
+
+const manifest = {};
+const skipped = [];
+let before = 0;
+let after = 0;
+
 for (const name of imagesIn(SOURCE)) {
   const from = path.join(SOURCE, name);
-  const alpha = hasAlpha(from);
-  const out = alpha ? name : name.replace(/\.[^.]+$/, ".jpg");
+  const out = name.replace(/\.[^.]+$/, ".webp");
   const to = path.join(TARGET, out);
   mkdirSync(path.dirname(to), { recursive: true });
 
-  execFileSync(
-    "sips",
-    alpha
-      ? ["-Z", String(ALPHA_SIDE), from, "--out", to]
-      : ["-s", "format", "jpeg", "-s", "formatOptions", String(JPEG_QUALITY),
-         "-Z", String(OPAQUE_SIDE), from, "--out", to],
-    { stdio: "ignore" }
-  );
+  execFileSync("cwebp", [
+    "-q", String(PREVIEW_QUALITY),
+    "-resize", String(PREVIEW_SIDE), "0",
+    "-quiet", from, "-o", to,
+  ]);
 
   const originalSize = statSync(from).size;
-  const twinSize = statSync(to).size;
-  const minSaving = alpha ? MIN_SAVING_PNG : MIN_SAVING_JPEG;
-  if (twinSize > originalSize * (1 - minSaving)) {
+  const previewSize = statSync(to).size;
+  if (previewSize > originalSize * (1 - MIN_SAVING)) {
     rmSync(to);
     skipped.push(name);
     continue;
   }
 
   manifest[`images/${name}`] = `images/lq/${out}`;
-  bytesBefore += originalSize;
-  bytesAfter += twinSize;
+  before += originalSize;
+  after += previewSize;
 }
 
 writeFileSync(
   MANIFEST,
   `/**
- * Low-resolution twins of the showcase images, keyed by the original path.
+ * Low-resolution previews of the showcase images, keyed by the original path.
  *
  * Generated by \`scripts/build-image-variants.mjs\` — do not edit by hand.
  */
 export const LOW_RES_IMAGES = Object.freeze(${JSON.stringify(manifest, null, 2)});
-`
+`,
 );
 
 const kb = (bytes) => Math.round(bytes / 1024);
 console.log(
-  `${Object.keys(manifest).length} twins: ${kb(bytesBefore)}KB → ${kb(bytesAfter)}KB ` +
-  `(${Math.round((1 - bytesAfter / bytesBefore) * 100)}% lighter)`
+  `${Object.keys(manifest).length} previews: ${kb(before)}KB → ${kb(after)}KB ` +
+  `(${Math.round((1 - after / before) * 100)}% lighter)`,
 );
-if (skipped.length) {
-  console.log(`skipped, already small enough: ${skipped.join(", ")}`);
-}
+if (skipped.length) console.log(`skipped, already small enough: ${skipped.join(", ")}`);

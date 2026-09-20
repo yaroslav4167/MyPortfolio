@@ -437,12 +437,11 @@ export async function runDotsBoot(_viewportEl, loaderEl, { dark = false } = {}) 
   if (!loader) return;
 
   const base = assetBase();
-  // Only the light previews are waited for: images without transparency, the ones that
-  // became JPEG — nine files, 160KB together. Transparent images stay PNG and weigh
-  // five times more, so they, the icons and the stickers are warmed alongside instead
-  // of holding the page back.
-  const quick = PRELOAD_PATHS.filter((path) => lightestPath(path).endsWith(".jpg"));
-  const rest = PRELOAD_PATHS.filter((path) => !lightestPath(path).endsWith(".jpg"));
+  // Only images that actually have a preview are waited for — together they weigh a
+  // fraction of the originals. Everything else (icons, the few images already smaller
+  // than any preview) is warmed alongside instead of holding the page back.
+  const quick = PRELOAD_PATHS.filter((path) => lightestPath(path) !== path);
+  const rest = PRELOAD_PATHS.filter((path) => lightestPath(path) === path);
 
   const stop = trackAssets((p) => loader.setProgress(p), {
     preload: quick.map((path) => base + lightestPath(path)),
