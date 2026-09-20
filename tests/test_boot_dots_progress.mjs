@@ -144,6 +144,32 @@ describe("dots boot: asset readiness", () => {
     }
   });
 
+  it("reports ready at once when everything came from cache", async () => {
+    const page = setupPage();
+    try {
+      const { trackAssets } = await load("portfolio/js/boot/dots/assets.js");
+      // Warm-up probes settle immediately, as they do on a repeat visit.
+      globalThis.Image = class {
+        constructor() {
+          this.complete = true;
+          queueMicrotask(() => this.onload?.());
+        }
+        set src(_url) {}
+      };
+
+      let value = 0;
+      trackAssets((p) => { value = p; }, { preload: ["/a.png", "/b.png"] });
+
+      await page.fontsDone();
+      page.addImage(true);
+      page.advance(400);
+
+      assert.equal(value, 1, "ready well before the silence window — no animation needed");
+    } finally {
+      page.restore();
+    }
+  });
+
   it("keeps progress monotonic and honours the hard timeout", async () => {
     const page = setupPage();
     try {

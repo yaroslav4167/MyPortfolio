@@ -6,6 +6,10 @@
  * the preload links. So the watched set is rebuilt every frame, and readiness is
  * judged mainly by network silence: `load` can be held back indefinitely by the
  * analytics beacon, so it counts as a hint, never as a requirement.
+ *
+ * A warm cache takes a shortcut: if everything is already in place within
+ * `fastPathMs`, readiness is reported at once instead of waiting out the silence
+ * window — that is what lets a repeat visit skip the animation entirely.
  */
 
 /** Assets the page requests only once it creates the matching elements. */
@@ -78,6 +82,8 @@ export function trackAssets(onProgress, {
   minWait = 600,
   minTotal = 8,
   imageGrace = 2500,
+  fastPathMs = 600,
+  fastIdleAfter = 180,
 } = {}) {
   const startedAt = performance.now();
   let progress = 0;
@@ -89,17 +95,32 @@ export function trackAssets(onProgress, {
   let settledAt = 0;
 
   // Warm the cache up front: some images are only requested once the loader is
-  // gone, so they cannot be awaited — but they can be ready by then.
+  // gone, so they cannot be awaited — but they can be ready by then. The page's
+  // own preload links join the list: on a repeat visit they settle instantly and
+  // let the fast path fire.
+  const warmUrls = new Set(preload);
+  for (const link of document.querySelectorAll?.('link[rel="preload"][as="image"]') ?? []) {
+    if (link.href) warmUrls.add(link.href);
+  }
+  preload = Array.from(warmUrls);
+
   for (const url of preload) {
     const probe = new Image();
     const tick = () => {
       warmed++;
       lastActivity = performance.now();
     };
-    probe.onload = tick;
+    // `complete` only means the bytes arrived; decoding still happens on first
+    // paint, which is exactly the flicker this warm-up is meant to avoid.
+    const settle = () => {
+      const decoded = typeof probe.decode === "function" ? probe.decode() : null;
+      if (decoded) decoded.then(tick, tick);
+      else tick();
+    };
+    probe.onload = settle;
     probe.onerror = tick;
     probe.src = url;
-    if (probe.complete) tick();
+    if (probe.complete) settle();
   }
 
   const onLoad = () => { loaded = true; };
@@ -126,6 +147,23 @@ export function trackAssets(onProgress, {
     // Lazy images may never be fetched at all; waiting on them is pointless.
     const images = Array.from(document.images ?? []).filter((img) => img.loading !== "lazy");
     const ready = images.filter((img) => img.complete).length;
+    const elapsed = now - startedAt;
+
+    // Everything already in place this early means a warm cache: report ready
+    // right away so the loader can skip the animation instead of holding the
+    // page back for the silence window.
+    // Only meaningful when there is a warm-up list to judge by: without it an
+    // early quiet moment says nothing about what the page will request next.
+    if (
+      preload.length > 0 &&
+      elapsed < fastPathMs &&
+      fontsReady &&
+      warmed >= preload.length &&
+      ready === images.length &&
+      now - lastActivity >= fastIdleAfter
+    ) {
+      return 1;
+    }
 
     // While the page is still empty the denominator is padded, otherwise the
     // counter would hit 100% before the site orders its first image.
@@ -133,7 +171,7 @@ export function trackAssets(onProgress, {
     const done = ready + (fontsReady ? 1 : 0) + (loaded ? 1 : 0) + warmed;
 
     const quiet = !observer || now - lastActivity >= idleAfter;
-    const settled = fontsReady && quiet && now - startedAt >= minWait && warmed >= preload.length;
+    const settled = fontsReady && quiet && elapsed >= minWait && warmed >= preload.length;
     if (settled && !settledAt) settledAt = now;
 
     // Images added by script after `load` are awaited, but not forever: some may

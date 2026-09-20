@@ -40,18 +40,21 @@ DOM directly, so they are unit-tested in `tests/test_boot_dots_*.mjs`.
 1. **Quiet until it matters.** Nothing is shown for the first 600ms; if the page
    is ready by then, the animation is skipped entirely — the same rule the
    existing CSS already encoded through `is-boot-slow`.
-2. **Rings.** Dots fade towards the edges and glow up as progress grows; a
+2. **Warm cache skips it.** On a repeat visit the warm-up list settles within a
+   few hundred milliseconds, readiness is reported immediately and the animation
+   never shows — the page simply appears.
+3. **Rings.** Dots fade towards the edges and glow up as progress grows; a
    lightness wave travels outwards. The percent badge sits in the middle and the
    rings start outside it.
-3. **Blast.** Dots fly outwards, overshoot, and settle into the grid. Ring
+4. **Blast.** Dots fly outwards, overshoot, and settle into the grid. Ring
    density is set independently of grid density, so the missing dots are born
    mid-flight out of their neighbours — while everything is moving, the arrival
    does not read as popping in.
-4. **Hand-over.** The settled grid matches `.scene-infinite-bg` one to one —
+5. **Hand-over.** The settled grid matches `.scene-infinite-bg` one to one —
    step, dot radius, offset and color are read off the live element, because the
    offset depends on where the camera stood and the size on the zoom. Then the
    canvas is removed and the site's own grid, which pans with the camera, takes
    over. On mobile, where the site draws no grid, the loader paints one with a
    CSS gradient and dissolves over it.
-5. **Content last.** The backdrop only lifts once the animation is over, so the
+6. **Content last.** The backdrop only lifts once the animation is over, so the
    cards never appear under flying dots.
