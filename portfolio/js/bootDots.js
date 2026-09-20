@@ -30,7 +30,7 @@ import {
   assetBase,
   lightestPath,
 } from "./boot/dots/assets.js";
-import { upgradeImages } from "./progressiveImages.js";
+import { upgradeImages, watchZoom } from "./progressiveImages.js";
 import { INFINITE_BG } from "./infiniteBg.js";
 
 const BADGE_SIZE = 100;
@@ -430,8 +430,11 @@ export async function runDotsBoot(_viewportEl, loaderEl, { dark = false } = {}) 
     canShow: () => !cachedNow(),
     onDone: () => {
       writeCacheHint(measuredCacheRatio() > 0.9);
-      // The page is on screen: pull in the full-size images behind it.
+      // The page is on screen: pull in the full-size images behind it, and keep
+      // watching — zooming in past what a preview can carry fetches that original
+      // ahead of the queue.
       upgradeImages();
+      watchZoom();
     },
   });
   if (!loader) return;
