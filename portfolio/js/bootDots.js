@@ -437,14 +437,16 @@ export async function runDotsBoot(_viewportEl, loaderEl, { dark = false } = {}) 
   if (!loader) return;
 
   const base = assetBase();
-  // Only the heavy scene images are waited for — they are what shows first.
-  // Icons and stickers are warmed alongside but never hold the loader back.
-  const heavy = PRELOAD_PATHS.filter((path) => lightestPath(path) !== path);
-  const light = PRELOAD_PATHS.filter((path) => lightestPath(path) === path);
+  // Only the light previews are waited for: images without transparency, the ones that
+  // became JPEG — nine files, 160KB together. Transparent images stay PNG and weigh
+  // five times more, so they, the icons and the stickers are warmed alongside instead
+  // of holding the page back.
+  const quick = PRELOAD_PATHS.filter((path) => lightestPath(path).endsWith(".jpg"));
+  const rest = PRELOAD_PATHS.filter((path) => !lightestPath(path).endsWith(".jpg"));
 
   const stop = trackAssets((p) => loader.setProgress(p), {
-    preload: heavy.map((path) => base + lightestPath(path)),
-    warmOnly: light.map((path) => base + path),
+    preload: quick.map((path) => base + lightestPath(path)),
+    warmOnly: rest.map((path) => base + lightestPath(path)),
     // Nothing is being fetched on a cached visit, so readiness should not wait
     // out the silence window — the fast path may fire as soon as warm-up ends.
     fastPathMs: cached ? 2500 : 600,

@@ -19,6 +19,7 @@
  * source images change.
  */
 import { execFileSync } from "node:child_process";
+import { usesTransparency } from "./detect-alpha.mjs";
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,17 +31,25 @@ const TARGET = path.join(SOURCE, "lq");
 const MANIFEST = path.join(REPO_ROOT, "shared/lowResImages.js");
 
 /** Longest side of a twin, px: enough to read as a preview. */
-// A preview lives for a fraction of a second: content stays hidden through the
-// animation and surfaces together with the swap to the original. So compress hard —
-// what matters is weight, not detail.
-const OPAQUE_SIDE = 240;
-const ALPHA_SIDE = 200;
-const JPEG_QUALITY = 38;
-/** Keep a twin only if it saves at least this much. */
-const MIN_SAVING = 0.25;
+// Previews are short-lived but they are seen: cards render at 372px, which is 744
+// physical pixels on a retina screen. A 240px preview visibly smears there, so 480 it
+// is — and that costs almost nothing, because the saving comes from the format rather
+// than the size.
+const OPAQUE_SIDE = 480;
+// A transparent PNG barely compresses: at 480px it comes out heavier than the
+// original. Those images also render smaller (144–191px), so they get their own size.
+const ALPHA_SIDE = 340;
+const JPEG_QUALITY = 50;
+/**
+ * Keep a twin only if it is lighter than the original. JPEG saves enormously, so the
+ * bar stays high; a transparent PNG gains less, but even that takes hundreds of
+ * kilobytes off the loader.
+ */
+const MIN_SAVING_JPEG = 0.25;
+const MIN_SAVING_PNG = 0.12;
 
-const hasAlpha = (file) =>
-  execFileSync("sips", ["-g", "hasAlpha", file]).toString().includes("yes");
+// What matters is transparency actually being used, not the channel being present.
+const hasAlpha = (file) => usesTransparency(file);
 
 mkdirSync(TARGET, { recursive: true });
 
@@ -77,7 +86,8 @@ for (const name of imagesIn(SOURCE)) {
 
   const originalSize = statSync(from).size;
   const twinSize = statSync(to).size;
-  if (twinSize > originalSize * (1 - MIN_SAVING)) {
+  const minSaving = alpha ? MIN_SAVING_PNG : MIN_SAVING_JPEG;
+  if (twinSize > originalSize * (1 - minSaving)) {
     rmSync(to);
     skipped.push(name);
     continue;

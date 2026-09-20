@@ -28,6 +28,34 @@ describe("low-res twins", () => {
     }
   });
 
+  it("keeps only what is genuinely lighter", async () => {
+    const { LOW_RES_IMAGES } = await load("shared/lowResImages.js");
+    const { usesTransparency } = await load("scripts/detect-alpha.mjs");
+
+    for (const [original, twin] of Object.entries(LOW_RES_IMAGES)) {
+      const from = path.join(REPO_ROOT, "ds-showcase/assets", original);
+      const to = path.join(REPO_ROOT, "ds-showcase/assets", twin);
+      const saving = 1 - statSync(to).size / statSync(from).size;
+      // Transparent images stay PNG and gain less; opaque ones become JPEG and gain a lot.
+      const floor = usesTransparency(from) ? 0.12 : 0.25;
+      assert.ok(saving >= floor, `${twin}: saved ${Math.round(saving * 100)}%`);
+    }
+  });
+
+  it("converts only images that do not actually use transparency", async () => {
+    const { LOW_RES_IMAGES } = await load("shared/lowResImages.js");
+    const { usesTransparency } = await load("scripts/detect-alpha.mjs");
+
+    for (const [original, twin] of Object.entries(LOW_RES_IMAGES)) {
+      const from = path.join(REPO_ROOT, "ds-showcase/assets", original);
+      if (twin.endsWith(".jpg")) {
+        assert.equal(usesTransparency(from), false, `${original} has nothing to lose`);
+      } else {
+        assert.equal(usesTransparency(from), true, `${original} needs its alpha`);
+      }
+    }
+  });
+
   it("keeps transparency as PNG and drops the rest to JPEG", async () => {
     const { LOW_RES_IMAGES } = await load("shared/lowResImages.js");
     for (const [original, twin] of Object.entries(LOW_RES_IMAGES)) {
